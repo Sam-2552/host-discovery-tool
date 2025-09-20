@@ -9,37 +9,145 @@ import json
 import subprocess
 import threading
 import time
+import tempfile
+import csv
+import io
+import sqlite3
+import uuid
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
+from flask import Flask, render_template, request, jsonify, session
+from flask_socketio import SocketIO, emit, join_room, leave_room
 import nmap
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'host_discovery_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Global variables to store scan results
-scan_results = {
-    'ping_hosts': set(),
-    'port_hosts': {},
-    'scan_status': 'idle',
-    'current_target': '',
-    'current_scan_type': '',
-    'start_time': None,
-    'total_hosts': 0
-}
+# Database setup
+DB_PATH = 'scan_sessions.db'
+
+def init_db():
+    """Initialize the SQLite database with required tables"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Create sessions table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scan_sessions (
+            session_id TEXT PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create scan_results table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scan_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            scan_status TEXT,
+            current_target TEXT,
+            current_scan_type TEXT,
+            start_time TIMESTAMP,
+            total_hosts INTEGER,
+            ping_hosts TEXT,
+            port_hosts TEXT,
+            firewall_suspected TEXT,
+            FOREIGN KEY (session_id) REFERENCES scan_sessions (session_id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+def get_or_create_session_id():
+    """Get or create a session ID for the current user"""
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+    return session['session_id']
+
+def get_scan_results(session_id):
+    """Get scan results for a specific session"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT * FROM scan_results WHERE session_id = ? ORDER BY id DESC LIMIT 1
+    ''', (session_id,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return {
+            'scan_status': result[2],
+            'current_target': result[3],
+            'current_scan_type': result[4],
+            'start_time': datetime.fromisoformat(result[5]) if result[5] else None,
+            'total_hosts': result[6],
+            'ping_hosts': set(json.loads(result[7])) if result[7] else set(),
+            'port_hosts': json.loads(result[8]) if result[8] else {},
+            'firewall_suspected': set(json.loads(result[9])) if result[9] else set()
+        }
+    else:
+        return {
+            'ping_hosts': set(),
+            'port_hosts': {},
+            'scan_status': 'idle',
+            'current_target': '',
+            'current_scan_type': '',
+            'start_time': None,
+            'total_hosts': 0,
+            'firewall_suspected': set()
+        }
+
+def save_scan_results(session_id, scan_data):
+    """Save scan results to database"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Ensure session exists
+    cursor.execute('''
+        INSERT OR IGNORE INTO scan_sessions (session_id) VALUES (?)
+    ''', (session_id,))
+    
+    # Save scan results
+    cursor.execute('''
+        INSERT INTO scan_results (
+            session_id, scan_status, current_target, current_scan_type,
+            start_time, total_hosts, ping_hosts, port_hosts, firewall_suspected
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        session_id,
+        scan_data['scan_status'],
+        scan_data['current_target'],
+        scan_data['current_scan_type'],
+        scan_data['start_time'].isoformat() if scan_data['start_time'] else None,
+        scan_data['total_hosts'],
+        json.dumps(list(scan_data['ping_hosts'])),
+        json.dumps(scan_data['port_hosts']),
+        json.dumps(list(scan_data['firewall_suspected']))
+    ))
+    
+    conn.commit()
+    conn.close()
+
+# Initialize database on startup
+init_db()
+
+# Global variables removed - now using session-based database storage
 
 class HostDiscoveryScanner:
-    def __init__(self):
+    def __init__(self, session_id):
         self.nm = nmap.PortScanner()
         self.scanning = False
+        self.session_id = session_id
         
     def ping_scan(self, target, ip_list=None):
         """Perform ping scan using nmap"""
         try:
             # If we have IP list, use it regardless of target
             if ip_list and ip_list.strip():
-                import tempfile
                 temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
                 temp_file.write(ip_list)
                 temp_file.close()
@@ -74,7 +182,6 @@ class HostDiscoveryScanner:
             
             # Clean up temporary file
             if 'temp_file' in locals() and temp_file:
-                import os
                 os.unlink(temp_file.name)
                 
             return hosts
@@ -125,7 +232,6 @@ class HostDiscoveryScanner:
     def port_scan_with_ip_list(self, ip_list, top_ports=25):
         """Perform port scan using nmap with IP list file"""
         try:
-            import tempfile
             temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
             temp_file.write(ip_list)
             temp_file.close()
@@ -164,7 +270,6 @@ class HostDiscoveryScanner:
             print(f"Port scan found {len(hosts_ports)} hosts with open ports: {hosts_ports}")
             
             # Clean up temporary file
-            import os
             os.unlink(temp_file.name)
             
             return hosts_ports
@@ -190,30 +295,42 @@ class HostDiscoveryScanner:
         Returns:
             dict: Scan results with ping_hosts, port_hosts, and firewall_suspected
         """
-        global scan_results
-        
         print(f"=== STARTING PROGRESSIVE HOST DISCOVERY ===")
+        print(f"Session ID: {self.session_id}")
         print(f"Target: {target}")
         print(f"IP List provided: {bool(ip_list and ip_list.strip())}")
         
         self.scanning = True
-        scan_results['scan_status'] = 'running'
-        scan_results['start_time'] = datetime.now()
-        scan_results['current_target'] = target
         
-        # Initialize firewall detection
-        scan_results['firewall_suspected'] = set()
+        # Initialize scan results for this session
+        scan_results = {
+            'scan_status': 'running',
+            'start_time': datetime.now(),
+            'current_target': target,
+            'current_scan_type': '',
+            'total_hosts': 0,
+            'ping_hosts': set(),
+            'port_hosts': {},
+            'firewall_suspected': set()
+        }
+        
+        # Save initial state
+        save_scan_results(self.session_id, scan_results)
         
         # Step 1: Ping scan to identify responsive hosts
         scan_results['current_scan_type'] = 'ping'
         socketio.emit('scan_update', {
             'type': 'ping_start',
-            'message': f'Starting ping scan for host discovery'
-        })
+            'message': f'Starting ping scan for host discovery',
+            'session_id': self.session_id
+        }, room=self.session_id)
         
         ping_hosts = self.ping_scan(target, ip_list)
         scan_results['ping_hosts'] = ping_hosts
         scan_results['total_hosts'] = len(ping_hosts)
+        
+        # Save ping results
+        save_scan_results(self.session_id, scan_results)
         
         print(f"PING SCAN COMPLETE: Found {len(ping_hosts)} responsive hosts")
         print(f"Responsive hosts: {ping_hosts}")
@@ -221,14 +338,14 @@ class HostDiscoveryScanner:
         socketio.emit('scan_update', {
             'type': 'ping_complete',
             'hosts': list(ping_hosts),
-            'count': len(ping_hosts)
-        })
+            'count': len(ping_hosts),
+            'session_id': self.session_id
+        }, room=self.session_id)
         
         # Step 2: Progressive port scanning following user's exact logic
         port_ranges = [25, 50, 100, 1024]
         
         # Create temp file with all IPs for first scan
-        import tempfile
         temp_file = None
         if ip_list and ip_list.strip():
             temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
@@ -257,8 +374,9 @@ class HostDiscoveryScanner:
                 'type': 'port_scan_start',
                 'message': f'Port scanning (top {port_range} ports)',
                 'port_range': port_range,
-                'remaining_hosts': len(open(current_ips_file).readlines())
-            })
+                'remaining_hosts': len(open(current_ips_file).readlines()),
+                'session_id': self.session_id
+            }, room=self.session_id)
             
             # Perform port scan using temp file
             port_results = self.port_scan_with_ip_list(open(current_ips_file).read(), port_range)
@@ -286,8 +404,9 @@ class HostDiscoveryScanner:
                         'host': host,
                         'ports': ports,
                         'port_range': port_range,
-                        'message': f'Firewall response detected - {len(ports)}/{port_range} ports open'
-                    })
+                        'message': f'Firewall response detected - {len(ports)}/{port_range} ports open',
+                        'session_id': self.session_id
+                    }, room=self.session_id)
                     firewall_detected += 1
                 else:
                     # Genuine host with selective open ports
@@ -300,13 +419,17 @@ class HostDiscoveryScanner:
                         'host': host,
                         'ports': ports,
                         'port_range': port_range,
-                        'message': f'Host discovered with {len(ports)} open ports'
-                    })
+                        'message': f'Host discovered with {len(ports)} open ports',
+                        'session_id': self.session_id
+                    }, room=self.session_id)
             
             print(f"PORT SCAN {port_range} COMPLETE:")
             print(f"  - New host discoveries: {new_discoveries}")
             print(f"  - Firewall responses detected: {firewall_detected}")
             print(f"  - IPs without ports (for next scan): {len(ips_without_ports)}")
+            
+            # Save progress after each port scan
+            save_scan_results(self.session_id, scan_results)
             
             socketio.emit('scan_update', {
                 'type': 'port_scan_complete',
@@ -314,12 +437,12 @@ class HostDiscoveryScanner:
                 'discovered': new_discoveries,
                 'firewall_detected': firewall_detected,
                 'remaining': len(ips_without_ports),
-                'total_discovered': len(scan_results['port_hosts'])
-            })
+                'total_discovered': len(scan_results['port_hosts']),
+                'session_id': self.session_id
+            }, room=self.session_id)
             
             # Create new temp file with IPs that had no open ports for next iteration
             if ips_without_ports:
-                import os
                 os.unlink(current_ips_file)  # Remove old file
                 temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt')
                 temp_file.write('\n'.join(ips_without_ports))
@@ -332,7 +455,6 @@ class HostDiscoveryScanner:
         
         # Clean up final temp file
         if current_ips_file and os.path.exists(current_ips_file):
-            import os
             os.unlink(current_ips_file)
         
         # Final results summary
@@ -344,6 +466,10 @@ class HostDiscoveryScanner:
         print(f"Firewall hosts: {list(scan_results['firewall_suspected'])}")
         
         scan_results['scan_status'] = 'completed'
+        
+        # Save final results
+        save_scan_results(self.session_id, scan_results)
+        
         socketio.emit('scan_update', {
             'type': 'scan_complete',
             'message': 'Host discovery completed successfully',
@@ -351,13 +477,15 @@ class HostDiscoveryScanner:
                 'ping_hosts': list(scan_results['ping_hosts']),
                 'port_hosts': scan_results['port_hosts'],
                 'firewall_suspected': list(scan_results['firewall_suspected'])
-            }
-        })
+            },
+            'session_id': self.session_id
+        }, room=self.session_id)
         
         self.scanning = False
         return scan_results
 
-scanner = HostDiscoveryScanner()
+# Global scanner instances per session
+active_scanners = {}
 
 @app.route('/')
 def index():
@@ -365,16 +493,17 @@ def index():
 
 @app.route('/api/start_scan', methods=['POST'])
 def start_scan():
-    global scan_results
+    session_id = get_or_create_session_id()
     
-    if scanner.scanning:
-        return jsonify({'error': 'Scan already in progress'}), 400
+    # Check if this session already has a scanner running
+    if session_id in active_scanners and active_scanners[session_id].scanning:
+        return jsonify({'error': 'Scan already in progress for this session'}), 400
     
     data = request.json
     target = data.get('target', '').strip()
     ip_list = data.get('ip_list', '').strip()
     
-    print(f"Received scan request - target: '{target}', ip_list length: {len(ip_list)}")
+    print(f"Received scan request - Session: {session_id}, target: '{target}', ip_list length: {len(ip_list)}")
     
     if not target and not ip_list:
         return jsonify({'error': 'Target or IP list required'}), 400
@@ -383,36 +512,47 @@ def start_scan():
     if ip_list and not target:
         target = 'IP List'
     
-    # Reset results
-    scan_results = {
-        'ping_hosts': set(),
-        'port_hosts': {},
-        'scan_status': 'running',
-        'current_target': target or 'IP List',
-        'current_scan_type': '',
-        'start_time': None,
-        'total_hosts': 0
-    }
+    # Create new scanner for this session
+    scanner = HostDiscoveryScanner(session_id)
+    active_scanners[session_id] = scanner
     
     # Start scan in background thread
     thread = threading.Thread(target=scanner.progressive_scan, args=(target, ip_list))
     thread.daemon = True
     thread.start()
     
-    return jsonify({'message': 'Scan started successfully'})
+    return jsonify({'message': 'Scan started successfully', 'session_id': session_id})
 
 @app.route('/api/stop_scan', methods=['POST'])
 def stop_scan():
-    scanner.scanning = False
-    scan_results['scan_status'] = 'stopped'
-    socketio.emit('scan_update', {
-        'type': 'scan_stopped',
-        'message': 'Scan stopped by user'
-    })
-    return jsonify({'message': 'Scan stopped'})
+    session_id = get_or_create_session_id()
+    
+    if session_id in active_scanners:
+        active_scanners[session_id].scanning = False
+        
+        # Update scan status in database
+        scan_results = get_scan_results(session_id)
+        scan_results['scan_status'] = 'stopped'
+        save_scan_results(session_id, scan_results)
+        
+        socketio.emit('scan_update', {
+            'type': 'scan_stopped',
+            'message': 'Scan stopped by user',
+            'session_id': session_id
+        }, room=session_id)
+        
+        # Remove scanner from active scanners
+        del active_scanners[session_id]
+        
+        return jsonify({'message': 'Scan stopped'})
+    else:
+        return jsonify({'error': 'No active scan found for this session'}), 400
 
 @app.route('/api/scan_status')
 def scan_status():
+    session_id = get_or_create_session_id()
+    scan_results = get_scan_results(session_id)
+    
     return jsonify({
         'status': scan_results['scan_status'],
         'ping_hosts': list(scan_results['ping_hosts']),
@@ -421,12 +561,15 @@ def scan_status():
         'current_target': scan_results['current_target'],
         'current_scan_type': scan_results['current_scan_type'],
         'start_time': scan_results['start_time'].isoformat() if scan_results['start_time'] else None,
-        'total_hosts': scan_results['total_hosts']
+        'total_hosts': scan_results['total_hosts'],
+        'session_id': session_id
     })
 
 @app.route('/api/export_results')
 def export_results():
     """Export scan results in various formats"""
+    session_id = get_or_create_session_id()
+    scan_results = get_scan_results(session_id)
     export_format = request.args.get('format', 'json')
     
     results = {
@@ -434,7 +577,8 @@ def export_results():
             'target': scan_results['current_target'],
             'start_time': scan_results['start_time'].isoformat() if scan_results['start_time'] else None,
             'status': scan_results['scan_status'],
-            'total_hosts': scan_results['total_hosts']
+            'total_hosts': scan_results['total_hosts'],
+            'session_id': session_id
         },
         'ping_hosts': list(scan_results['ping_hosts']),
         'port_hosts': scan_results['port_hosts']
@@ -443,9 +587,6 @@ def export_results():
     if export_format == 'json':
         return jsonify(results)
     elif export_format == 'csv':
-        import csv
-        import io
-        
         output = io.StringIO()
         writer = csv.writer(output)
         
@@ -463,6 +604,7 @@ def export_results():
     elif export_format == 'txt':
         output = []
         output.append(f"Host Discovery Results - {scan_results['current_target']}")
+        output.append(f"Session ID: {session_id}")
         output.append(f"Scan Time: {scan_results['start_time']}")
         output.append(f"Status: {scan_results['scan_status']}")
         output.append(f"Total Hosts: {scan_results['total_hosts']}")
@@ -480,15 +622,25 @@ def export_results():
 
 @socketio.on('connect')
 def handle_connect():
-    print('Client connected')
+    session_id = get_or_create_session_id()
+    print(f'Client connected with session: {session_id}')
+    
+    # Join the session-specific room
+    join_room(session_id)
+    
     emit('scan_update', {
         'type': 'connected',
-        'message': 'Connected to scan server'
-    })
+        'message': 'Connected to scan server',
+        'session_id': session_id
+    }, room=session_id)
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print('Client disconnected')
+    session_id = get_or_create_session_id()
+    print(f'Client disconnected from session: {session_id}')
+    
+    # Leave the session-specific room
+    leave_room(session_id)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
