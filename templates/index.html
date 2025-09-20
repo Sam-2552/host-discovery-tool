@@ -259,6 +259,179 @@
             margin-bottom: 20px;
         }
 
+        .active-scans-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .active-scans-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .scan-item {
+            background: white;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .scan-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .scan-item.active {
+            border-color: #667eea;
+            background: #f0f2ff;
+        }
+
+        .scan-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .scan-name {
+            font-weight: 700;
+            color: #212529;
+            font-size: 1.1em;
+            margin-bottom: 4px;
+        }
+        
+        .scan-target {
+            font-weight: 500;
+            color: #6c757d;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .scan-status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .scan-status-running {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .scan-status-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .scan-status-stopped {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .scan-item-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .scan-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .scan-btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .scan-btn-view {
+            background: #667eea;
+            color: white;
+        }
+
+        .scan-btn-stop {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .scan-btn:hover {
+            opacity: 0.8;
+        }
+
+        .files-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            border-left: 4px solid #28a745;
+        }
+
+        .files-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            background: white;
+            border: 1px solid #e1e5e9;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .file-item:hover {
+            border-color: #28a745;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.1);
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #495057;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .file-details {
+            font-size: 0.8em;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+
+        .file-download {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .file-download:hover {
+            background: #218838;
+        }
+
         .stat-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -317,6 +490,11 @@
                 <h3>Scan Configuration</h3>
                 
                 <div class="form-group">
+                    <label for="scanName">Scan Name (Optional):</label>
+                    <input type="text" id="scanName" placeholder="e.g., Office Network Scan, Home Network Discovery">
+                </div>
+                
+                <div class="form-group">
                     <label for="target">Target Subnet/IP Range:</label>
                     <input type="text" id="target" placeholder="192.168.1.0/24 or 192.168.1.1-254">
                 </div>
@@ -334,8 +512,14 @@
                     <div id="scanProgress" style="margin-top: 10px;"></div>
                 </div>
 
-                <button class="btn" id="startScan" onclick="startScan()">Start Scan</button>
-                <button class="btn btn-danger" id="stopScan" onclick="stopScan()" disabled>Stop Scan</button>
+                <div class="active-scans-section" id="activeScansSection" style="display: none;">
+                    <h4>Active Scans</h4>
+                    <div id="activeScansList" class="active-scans-list"></div>
+                </div>
+
+                <button class="btn" id="startScan" onclick="startScan()">Start New Scan</button>
+                <button class="btn btn-danger" id="stopScan" onclick="stopScan()" disabled>Stop Current Scan</button>
+                <button class="btn" id="clearInputs" onclick="clearInputFields()" style="background: #6c757d;">Clear Inputs</button>
 
             <div class="stats-grid">
                 <div class="stat-card">
@@ -394,6 +578,11 @@
                             <span class="log-timestamp">[Ready]</span> Host Discovery Tool initialized
                         </div>
                     </div>
+                    
+                    <div class="files-section" id="filesSection" style="display: none; margin-top: 15px;">
+                        <h4>📁 Scan Files</h4>
+                        <div id="scanFilesList" class="files-list"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -402,10 +591,18 @@
     <script>
         const socket = io();
         let isScanning = false;
+        let currentScanId = null;
+        let activeScans = {};
 
         // Socket event handlers
         socket.on('scan_update', function(data) {
-            updateScanStatus(data);
+            // Only update if this is the current scan or we don't have a current scan
+            if (!currentScanId || data.scan_id === currentScanId) {
+                updateScanStatus(data);
+            }
+            
+            // Update active scans list
+            updateActiveScansList();
         });
 
         function updateScanStatus(data) {
@@ -414,13 +611,15 @@
             const scanProgress = document.getElementById('scanProgress');
             const scanLog = document.getElementById('scanLog');
 
-            // Add log entry
-            const timestamp = new Date().toLocaleTimeString();
-            const logEntry = document.createElement('div');
-            logEntry.className = 'log-entry';
-            logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${data.message || data.type}`;
-            scanLog.appendChild(logEntry);
-            scanLog.scrollTop = scanLog.scrollHeight;
+            // Add log entry with scan ID (only for current scan)
+            if (data.scan_id === currentScanId) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> [${data.scan_id ? data.scan_id.substring(0, 8) : 'N/A'}] ${data.message || data.type}`;
+                scanLog.appendChild(logEntry);
+                scanLog.scrollTop = scanLog.scrollHeight;
+            }
 
             switch(data.type) {
                 case 'ping_start':
@@ -430,7 +629,7 @@
                 
                 case 'ping_complete':
                     updatePingResults(data.hosts);
-                    updateStats();
+                    updateStats(data.scan_id);
                     break;
                 
                 case 'port_scan_start':
@@ -446,12 +645,12 @@
                 
                 case 'host_discovered':
                     updatePortResults(data.host, data.ports);
-                    updateStats();
+                    updateStats(data.scan_id);
                     break;
                 
                 case 'firewall_detected':
                     updateFirewallResults(data.host, data.ports, data.message);
-                    updateStats();
+                    updateStats(data.scan_id);
                     break;
                 
                 case 'port_scan_complete':
@@ -467,17 +666,25 @@
                     statusIndicator.className = 'status-indicator status-completed';
                     statusText.textContent = 'Scan completed';
                     scanProgress.innerHTML = '<div style="color: #51cf66;">✓ Scan completed successfully</div>';
-                    isScanning = false;
-                    document.getElementById('startScan').disabled = false;
-                    document.getElementById('stopScan').disabled = true;
+                    // Only disable start button if this is the current scan
+                    if (data.scan_id === currentScanId) {
+                        isScanning = false;
+                        document.getElementById('startScan').disabled = false;
+                        document.getElementById('stopScan').disabled = true;
+                    }
+                    updateActiveScansList();
                     break;
                 
                 case 'scan_stopped':
                     statusIndicator.className = 'status-indicator status-stopped';
                     statusText.textContent = 'Scan stopped';
-                    isScanning = false;
-                    document.getElementById('startScan').disabled = false;
-                    document.getElementById('stopScan').disabled = true;
+                    // Only disable start button if this is the current scan
+                    if (data.scan_id === currentScanId) {
+                        isScanning = false;
+                        document.getElementById('startScan').disabled = false;
+                        document.getElementById('stopScan').disabled = true;
+                    }
+                    updateActiveScansList();
                     break;
             }
         }
@@ -548,9 +755,12 @@
             document.getElementById('firewallResults').appendChild(hostItem);
         }
 
-        function updateStats() {
+        function updateStats(scanId = null) {
+            const targetScanId = scanId || currentScanId;
+            if (!targetScanId) return;
+            
             // This would be updated via API calls or socket events
-            fetch('/api/scan_status')
+            fetch(`/api/scan_status?scan_id=${targetScanId}`)
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('pingHosts').textContent = data.ping_hosts.length;
@@ -571,10 +781,11 @@
         }
 
         function startScan() {
+            const scanName = document.getElementById('scanName').value.trim();
             const target = document.getElementById('target').value.trim();
             const ipList = document.getElementById('ipList').value.trim();
             
-            console.log('Start scan called with target:', target, 'ipList:', ipList);
+            console.log('Start scan called with scanName:', scanName, 'target:', target, 'ipList:', ipList);
             
             if (!target && !ipList) {
                 alert('Please enter a target subnet/IP range or list IPs in the text area');
@@ -608,6 +819,7 @@
             document.getElementById('providedIPs').textContent = providedCount;
             
             const requestData = {
+                scan_name: scanName,
                 target: target,
                 ip_list: ipList
             };
@@ -630,12 +842,22 @@
                     alert(data.error);
                 } else {
                     isScanning = true;
+                    currentScanId = data.scan_id;
                     document.getElementById('startScan').disabled = true;
                     document.getElementById('stopScan').disabled = false;
+                    
+                    // Clear input fields after starting scan
+                    document.getElementById('scanName').value = '';
+                    document.getElementById('target').value = '';
+                    document.getElementById('ipList').value = '';
+                    document.getElementById('providedIPs').textContent = '0';
                     
                     // Clear previous results
                     document.getElementById('pingResults').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Scanning...</div>';
                     document.getElementById('portResults').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">Scanning...</div>';
+                    
+                    // Update active scans list
+                    updateActiveScansList();
                 }
             })
             .catch(error => {
@@ -645,12 +867,28 @@
         }
 
         function stopScan() {
+            if (!currentScanId) {
+                alert('No active scan to stop');
+                return;
+            }
+            
             fetch('/api/stop_scan', {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ scan_id: currentScanId })
             })
             .then(response => response.json())
             .then(data => {
                 console.log(data.message);
+                if (data.scan_id === currentScanId) {
+                    currentScanId = null;
+                    isScanning = false;
+                    document.getElementById('startScan').disabled = false;
+                    document.getElementById('stopScan').disabled = true;
+                }
+                updateActiveScansList();
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -658,7 +896,11 @@
         }
 
         function exportResults(format) {
-            window.open(`/api/export_results?format=${format}`, '_blank');
+            if (!currentScanId) {
+                alert('Please select a scan to export');
+                return;
+            }
+            window.open(`/api/export_results?format=${format}&scan_id=${currentScanId}`, '_blank');
         }
 
         // Function to update provided IPs counter
@@ -666,8 +908,10 @@
             const target = document.getElementById('target').value.trim();
             const ipList = document.getElementById('ipList').value.trim();
             
+            console.log('Updating IP counter - Target:', target, 'IP List length:', ipList.length);
+            
             let providedCount = 0;
-            if (target) {
+            if (target && target !== 'IP List') {
                 if (target.includes('/')) {
                     const cidr = parseInt(target.split('/')[1]);
                     providedCount = Math.pow(2, 32 - cidr);
@@ -685,12 +929,328 @@
                 providedCount = ipList.split('\n').filter(line => line.trim()).length;
             }
             
+            console.log('Calculated provided count:', providedCount);
             document.getElementById('providedIPs').textContent = providedCount;
         }
 
+        function updateActiveScansList() {
+            fetch('/api/session_scans')
+                .then(response => response.json())
+                .then(data => {
+                    const activeScansSection = document.getElementById('activeScansSection');
+                    const activeScansList = document.getElementById('activeScansList');
+                    
+                    if (data.scans.length === 0) {
+                        activeScansSection.style.display = 'none';
+                        return;
+                    }
+                    
+                    activeScansSection.style.display = 'block';
+                    activeScansList.innerHTML = '';
+                    
+                    data.scans.forEach(scan => {
+                        const scanItem = document.createElement('div');
+                        scanItem.className = 'scan-item';
+                        if (scan.scan_id === currentScanId) {
+                            scanItem.classList.add('active');
+                        }
+                        
+                        const statusClass = `scan-status-${scan.status}`;
+                        const statusText = scan.status.charAt(0).toUpperCase() + scan.status.slice(1);
+                        
+                        scanItem.innerHTML = `
+                            <div class="scan-item-header">
+                                <div>
+                                    <div class="scan-name">${scan.scan_name || 'Unnamed Scan'}</div>
+                                    <div class="scan-target">${scan.target}</div>
+                                </div>
+                                <span class="scan-status-badge ${statusClass}">${statusText}</span>
+                            </div>
+                            <div class="scan-item-footer">
+                                <span>Started: ${new Date(scan.started_at).toLocaleTimeString()}</span>
+                                <div class="scan-controls">
+                                    <button class="scan-btn scan-btn-view" onclick="switchToScan('${scan.scan_id}')">View</button>
+                                    ${scan.status === 'running' ? `<button class="scan-btn scan-btn-stop" onclick="stopSpecificScan('${scan.scan_id}')">Stop</button>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        
+                        activeScansList.appendChild(scanItem);
+                    });
+                });
+        }
+        
+        function switchToScan(scanId) {
+            currentScanId = scanId;
+            
+            // Clear scan log and rebuild for this scan
+            rebuildScanLog(scanId);
+            
+            // Load scan files
+            loadScanFiles(scanId);
+            
+            // Get scan details to restore input fields
+            fetch('/api/session_scans')
+                .then(response => response.json())
+                .then(sessionData => {
+                    const scan = sessionData.scans.find(s => s.scan_id === scanId);
+                    if (scan) {
+                        // Restore scan name
+                        document.getElementById('scanName').value = scan.scan_name || '';
+                        
+                        // Restore input fields properly
+                        if (scan.target === 'IP List' && scan.ip_list) {
+                            // If target was 'IP List', clear target and put IPs in ipList field
+                            document.getElementById('target').value = '';
+                            document.getElementById('ipList').value = scan.ip_list;
+                        } else {
+                            // Normal case: target was a subnet/IP range
+                            document.getElementById('target').value = scan.target;
+                            document.getElementById('ipList').value = scan.ip_list || '';
+                        }
+                        
+                        // Update IP counter with a small delay to ensure values are set
+                        setTimeout(() => {
+                            updateProvidedIPsCounter();
+                        }, 10);
+                    }
+                });
+            
+            // Update UI to show this scan's data
+            updateStats(scanId);
+            
+            // Clear and reload results for this scan
+            fetch(`/api/scan_status?scan_id=${scanId}`)
+                .then(response => response.json())
+                .then(data => {
+                    updatePingResults(data.ping_hosts);
+                    
+                    // Clear port results and rebuild
+                    const portResults = document.getElementById('portResults');
+                    portResults.innerHTML = '';
+                    
+                    if (Object.keys(data.port_hosts).length === 0) {
+                        portResults.innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No open ports discovered yet</div>';
+                    } else {
+                        Object.entries(data.port_hosts).forEach(([host, ports]) => {
+                            updatePortResults(host, ports);
+                        });
+                    }
+                    
+                    // Update status indicator and button states
+                    const statusIndicator = document.getElementById('statusIndicator');
+                    const statusText = document.getElementById('statusText');
+                    const startButton = document.getElementById('startScan');
+                    const stopButton = document.getElementById('stopScan');
+                    
+                    switch(data.status) {
+                        case 'running':
+                            statusIndicator.className = 'status-indicator status-running';
+                            statusText.textContent = 'Scan running';
+                            startButton.disabled = true;
+                            stopButton.disabled = false;
+                            isScanning = true;
+                            break;
+                        case 'completed':
+                            statusIndicator.className = 'status-indicator status-completed';
+                            statusText.textContent = 'Scan completed';
+                            startButton.disabled = false;
+                            stopButton.disabled = true;
+                            isScanning = false;
+                            break;
+                        case 'stopped':
+                            statusIndicator.className = 'status-indicator status-stopped';
+                            statusText.textContent = 'Scan stopped';
+                            startButton.disabled = false;
+                            stopButton.disabled = true;
+                            isScanning = false;
+                            break;
+                        default:
+                            statusIndicator.className = 'status-indicator status-idle';
+                            statusText.textContent = 'Ready to scan';
+                            startButton.disabled = false;
+                            stopButton.disabled = true;
+                            isScanning = false;
+                    }
+                });
+            
+            updateActiveScansList();
+        }
+        
+        function stopSpecificScan(scanId) {
+            fetch('/api/stop_scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ scan_id: scanId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.message);
+                if (scanId === currentScanId) {
+                    currentScanId = null;
+                    isScanning = false;
+                    document.getElementById('startScan').disabled = false;
+                    document.getElementById('stopScan').disabled = true;
+                    
+                    // Clear input fields when stopping current scan
+                    document.getElementById('target').value = '';
+                    document.getElementById('ipList').value = '';
+                    document.getElementById('providedIPs').textContent = '0';
+                }
+                updateActiveScansList();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+        
+        function clearScanLog() {
+            const scanLog = document.getElementById('scanLog');
+            scanLog.innerHTML = '<div class="log-entry"><span class="log-timestamp">[Ready]</span> Host Discovery Tool initialized</div>';
+        }
+        
+        function rebuildScanLog(scanId) {
+            // Clear current log
+            clearScanLog();
+            
+            // Load logs from database
+            fetch(`/api/scan_logs?scan_id=${scanId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const scanLog = document.getElementById('scanLog');
+                    
+                    if (data.logs && data.logs.length > 0) {
+                        // Add stored log entries
+                        data.logs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry';
+                            const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                            logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> [${scanId.substring(0, 8)}] ${log.message}`;
+                            scanLog.appendChild(logEntry);
+                        });
+                    } else {
+                        // Add a log entry indicating we're viewing this scan
+                        const timestamp = new Date().toLocaleTimeString();
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'log-entry';
+                        logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> [${scanId.substring(0, 8)}] Viewing scan results`;
+                        scanLog.appendChild(logEntry);
+                    }
+                    
+                    scanLog.scrollTop = scanLog.scrollHeight;
+                })
+                .catch(error => {
+                    console.error('Error loading scan logs:', error);
+                    // Fallback to basic log entry
+                    const scanLog = document.getElementById('scanLog');
+                    const timestamp = new Date().toLocaleTimeString();
+                    const logEntry = document.createElement('div');
+                    logEntry.className = 'log-entry';
+                    logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> [${scanId.substring(0, 8)}] Viewing scan results`;
+                    scanLog.appendChild(logEntry);
+                });
+        }
+        
+        function loadScanFiles(scanId) {
+            fetch(`/api/scan_files?scan_id=${scanId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const filesSection = document.getElementById('filesSection');
+                    const filesList = document.getElementById('scanFilesList');
+                    
+                    if (data.files && data.files.length > 0) {
+                        filesSection.style.display = 'block';
+                        filesList.innerHTML = '';
+                        
+                        data.files.forEach(file => {
+                            const fileItem = document.createElement('div');
+                            fileItem.className = 'file-item';
+                            
+                            const fileSize = formatFileSize(file.size);
+                            const modifiedDate = new Date(file.modified).toLocaleString();
+                            
+                            fileItem.innerHTML = `
+                                <div class="file-info">
+                                    <div class="file-name">${file.name}</div>
+                                    <div class="file-details">${fileSize} • ${modifiedDate}</div>
+                                </div>
+                                <button class="file-download" onclick="downloadFile('${file.download_url}', '${file.name}')">Download</button>
+                            `;
+                            
+                            filesList.appendChild(fileItem);
+                        });
+                    } else {
+                        filesSection.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading scan files:', error);
+                    document.getElementById('filesSection').style.display = 'none';
+                });
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function downloadFile(url, filename) {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function clearInputFields() {
+            document.getElementById('scanName').value = '';
+            document.getElementById('target').value = '';
+            document.getElementById('ipList').value = '';
+            document.getElementById('providedIPs').textContent = '0';
+            
+            // Clear current scan selection
+            currentScanId = null;
+            isScanning = false;
+            
+            // Reset status
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            const scanProgress = document.getElementById('scanProgress');
+            
+            statusIndicator.className = 'status-indicator status-idle';
+            statusText.textContent = 'Ready to scan';
+            scanProgress.innerHTML = '';
+            
+            // Reset buttons
+            document.getElementById('startScan').disabled = false;
+            document.getElementById('stopScan').disabled = true;
+            
+            // Clear results
+            document.getElementById('pingResults').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No ping responses yet</div>';
+            document.getElementById('portResults').innerHTML = '<div style="padding: 20px; text-align: center; color: #6c757d;">No open ports discovered yet</div>';
+            
+            // Clear scan log
+            clearScanLog();
+            
+            // Hide files section
+            document.getElementById('filesSection').style.display = 'none';
+            
+            // Reset stats
+            document.getElementById('pingHosts').textContent = '0';
+            document.getElementById('portHosts').textContent = '0';
+            document.getElementById('activeHosts').textContent = '0';
+            document.getElementById('firewallHosts').textContent = '0';
+        }
+        
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            updateStats();
+            updateActiveScansList();
             
             // Add event listeners to update counter as user types
             document.getElementById('target').addEventListener('input', updateProvidedIPsCounter);
